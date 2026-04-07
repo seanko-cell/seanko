@@ -370,6 +370,10 @@ select.score-input { cursor: pointer; }
     oninput="saveGsUrl(this.value)">
   <button class="btn" style="background:#0F9D58;color:white;font-size:12px" onclick="testConnection()">연결 테스트</button>
   <span id="gs-status" style="font-size:12px;color:var(--muted)">─</span>
+  <a id="gs-open-btn" href="#" target="_blank"
+    style="display:none;background:#1a73e8;color:white;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap">
+    📊 구글시트 바로 가기
+  </a>
 </div>
 
 <div class="action-bar">
@@ -1268,11 +1272,13 @@ function fillRandom() {
 // ═══════════════════════════════════════
 // GOOGLE SHEETS INTEGRATION
 // ═══════════════════════════════════════
-function getGsUrl() {
-  return localStorage.getItem('gs_url') || '';
-}
-function saveGsUrl(url) {
-  localStorage.setItem('gs_url', url.trim());
+function getGsUrl()      { return localStorage.getItem('gs_url')   || ''; }
+function saveGsUrl(url)  { localStorage.setItem('gs_url', url.trim()); }
+function getSheetUrl()   { return localStorage.getItem('sheet_url') || ''; }
+function saveSheetUrl(u) {
+  localStorage.setItem('sheet_url', u);
+  const btn = document.getElementById('gs-open-btn');
+  if (btn && u) { btn.href = u; btn.style.display = 'inline-block'; }
 }
 
 function showToast(msg, type = 'success') {
@@ -1390,7 +1396,8 @@ async function saveToSheets(type) {
     const j = await r.json();
     if (j.success) {
       showToast(`✅ ${type === 'selection' ? '선정평가' : 'KPI'} 저장 완료!`);
-      showSaveBanner(type, j.sheetUrl);
+      if (j.sheetUrl) saveSheetUrl(j.sheetUrl);
+      showSaveBanner(type, j.sheetUrl || getSheetUrl());
     } else {
       showToast('저장 오류: ' + j.error, 'error');
     }
@@ -1432,6 +1439,9 @@ function init() {
   const saved = getGsUrl();
   const urlEl = document.getElementById('gs-url');
   if (urlEl && saved) { urlEl.value = saved; setStatus('URL 저장됨', '#15803D'); }
+  // Restore sheet direct link
+  const sheetUrl = getSheetUrl();
+  if (sheetUrl) saveSheetUrl(sheetUrl);
 
   renderPF();
   renderShipping();
