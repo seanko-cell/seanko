@@ -83,6 +83,17 @@
       text-overflow: ellipsis;
     }
     .file-meta { font-size: 12px; color: #aaa; margin-top: 2px; }
+    .file-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #fff2ec;
+      color: #FF6B2C;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
     .file-actions { display: flex; gap: 8px; flex-shrink: 0; margin-left: 16px; }
     .btn-open {
       padding: 7px 18px;
@@ -170,7 +181,10 @@
         <div class="file-left">
           <div class="file-icon">📄</div>
           <div class="file-info">
-            <div class="file-name">${f.label || f.name}</div>
+            <div class="file-name">
+              ${f.label || f.name}
+              ${f.tag ? `<span class="file-tag">${f.tag}</span>` : ''}
+            </div>
             <div class="file-meta">${f.name} · ${f.added}</div>
           </div>
         </div>
@@ -221,19 +235,17 @@
     addFiles(e.dataTransfer.files);
   });
 
-  // 현재 파일(index.html)과 같은 폴더에 있는 파일 자동 제안은 불가(보안 제한)
-  // 대신 이미 알려진 파일이 있으면 자동 등록
+  // 알려진 파일 자동 등록
   (function autoRegister() {
-    const known = ['bunjang-partner-guide.html'];
+    const known = [
+      { name: 'bunjang-partner-guide-share.html', label: '번개장터 파트너 가이드', tag: '공유용' },
+      { name: 'bunjang-partner-guide.html',       label: '번개장터 파트너 가이드', tag: '원본' },
+    ];
     const files = load();
     let changed = false;
-    known.forEach(name => {
-      if (!files.find(f => f.name === name)) {
-        files.push({
-          name,
-          label: name.replace('.html','').replace(/-/g,' ').replace(/_/g,' '),
-          added: new Date().toLocaleDateString('ko-KR')
-        });
+    known.forEach(item => {
+      if (!files.find(f => f.name === item.name)) {
+        files.push({ name: item.name, label: item.label, tag: item.tag, added: new Date().toLocaleDateString('ko-KR') });
         changed = true;
       }
     });
