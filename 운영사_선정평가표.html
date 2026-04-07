@@ -382,6 +382,16 @@ select.score-input { cursor: pointer; }
 <!-- Toast 알림 -->
 <div id="toast" style="position:fixed;bottom:24px;right:24px;background:var(--navy);color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;display:none;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2);transition:opacity .3s"></div>
 
+<!-- 저장 완료 배너 -->
+<div id="save-banner" style="background:#F0FDF4;border:1.5px solid #86EFAC;border-radius:var(--radius);padding:12px 18px;margin-bottom:12px;display:none;align-items:center;gap:12px;flex-wrap:wrap">
+  <span style="font-size:13px;font-weight:700;color:#15803D">✅ 저장 완료</span>
+  <span id="save-banner-msg" style="font-size:12.5px;color:#166534"></span>
+  <a id="save-banner-link" href="#" target="_blank"
+    style="margin-left:auto;background:#0F9D58;color:white;padding:7px 16px;border-radius:6px;font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap">
+    📊 구글시트에서 결과 보기 →
+  </a>
+</div>
+
 <!-- ════════════════════════════════════════
      TAB 1 — 선정 평가표
 ════════════════════════════════════════ -->
@@ -1275,18 +1285,32 @@ async function saveToSheets(type) {
   try {
     const r = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' }, // Apps Script CORS 우회
+      headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload),
     });
     const j = await r.json();
     if (j.success) {
-      showToast(`✅ Google Sheets에 ${type === 'selection' ? '선정평가' : 'KPI'} 저장 완료!`);
+      showToast(`✅ ${type === 'selection' ? '선정평가' : 'KPI'} 저장 완료!`);
+      showSaveBanner(type, j.sheetUrl);
     } else {
       showToast('저장 오류: ' + j.error, 'error');
     }
   } catch (e) {
     showToast('저장 실패: ' + e.message, 'error');
   }
+}
+
+function showSaveBanner(type, sheetUrl) {
+  const banner  = document.getElementById('save-banner');
+  const msg     = document.getElementById('save-banner-msg');
+  const link    = document.getElementById('save-banner-link');
+  const label   = type === 'selection' ? '선정평가' : 'KPI모니터링';
+  msg.textContent = `[${label}] 시트에 데이터가 저장되었습니다.`;
+  link.href = sheetUrl || '#';
+  link.textContent = `📊 ${label} 시트에서 결과 보기 →`;
+  banner.style.display = 'flex';
+  // 배너 위치를 저장 버튼 아래로 스크롤
+  banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function calcKPIItemScore(item, val) {
