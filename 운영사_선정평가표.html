@@ -374,6 +374,7 @@ select.score-input { cursor: pointer; }
 
 <div class="action-bar">
   <button class="btn btn-primary" onclick="window.print()">🖨 인쇄 / PDF</button>
+  <button class="btn" style="background:#7C3AED;color:white" onclick="fillRandom()">🎲 랜덤 테스트값 입력</button>
   <button class="btn" style="background:#0F9D58;color:white" onclick="saveToSheets('selection')">📊 선정평가 저장</button>
   <button class="btn" style="background:#1D6F8C;color:white" onclick="saveToSheets('kpi')">📊 KPI 저장</button>
   <button class="btn btn-outline" onclick="resetAll()">↺ 초기화</button>
@@ -785,7 +786,7 @@ function renderShipping() {
         const val = state.ship[key] || '';
         return `<td><input type="number" class="score-input" value="${val}"
           placeholder="0" min="0"
-          oninput="onShipChange('${key}',this.value)" style="width:100%"></td>`;
+          oninput="this.value=clampPos(this.value);onShipChange('${key}',this.value)" style="width:100%"></td>`;
       })
     ).join('');
     return `<tr>
@@ -849,8 +850,8 @@ function renderScoring() {
           `<option value="${v}" ${val===v?'selected':''}>${l}</option>`).join('');
         input = `<select class="score-input" onchange="onScoreChange('${item.id}','${c}',this.value)" style="width:100%;font-size:11.5px">${opts}</select>`;
       } else {
-        input = `<input type="number" class="score-input" value="${val}" placeholder="${item.placeholder}"
-          oninput="onScoreChange('${item.id}','${c}',this.value)">`;
+        input = `<input type="number" class="score-input" value="${val}" placeholder="${item.placeholder}" min="0"
+          oninput="this.value=clampPos(this.value);onScoreChange('${item.id}','${c}',this.value)">`;
       }
       const score = calcItemScore(item, val);
       const scoreStr = score !== null ? score : '─';
@@ -990,7 +991,8 @@ function renderKPI() {
             onchange="onKPIChange('${key}','${comp}',this.value)">${opts}</select></td>`;
         }
         return `<td><input type="number" class="score-input" value="${val}"
-          placeholder="─" oninput="onKPIChange('${key}','${comp}',this.value)"
+          placeholder="─" min="0"
+          oninput="this.value=clampPos(this.value);onKPIChange('${key}','${comp}',this.value)"
           style="width:100%;padding:4px 6px;font-size:11px"></td>`;
       }).join('');
 
@@ -1164,6 +1166,103 @@ function resetAll() {
   Object.keys(state).forEach(k => { if (typeof state[k] === 'object') Object.keys(state[k]).forEach(sk => delete state[k][sk]); });
   Object.keys(state).filter(k => k.startsWith('_')).forEach(k => delete state[k]);
   init();
+}
+
+// ═══════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════
+function rnd(min, max, decimals = 0) {
+  const v = Math.random() * (max - min) + min;
+  return decimals ? Math.round(v * 10**decimals) / 10**decimals : Math.round(v);
+}
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function clampPos(v) { const n = parseFloat(v); return (isNaN(n) || n < 0) ? 0 : v; }
+
+// ═══════════════════════════════════════
+// RANDOM TEST DATA
+// ═══════════════════════════════════════
+/*
+  점수 구간별 랜덤 범위 (최댓값 = 최고 점수 구간 상한):
+  ① 배송 운임 : 5,000 ~ 25,000원 (지역·품목별 차등)
+  ② 수수료율  : 300 ~ 1,000원   (최고 점수 1,000원 상한)
+  ③ 월 물량   : 3,000 ~ 10,000건 (최고 점수 10,000건 상한)
+  ④ CS 인력   : 1 ~ 5명          (최고 점수 5인 상한)
+  ⑤ 시스템    : S / A / B
+  KPI CS응답률     : 85 ~ 100 %
+  KPI 처리속도     : 1.0 ~ 5.0 영업일
+  KPI 취소오배송률 : 0.3 ~ 5.5 %
+  KPI 불만건수     : 0 ~ 4 건
+*/
+
+// 배송 운임 범위: [품목idx][지역idx] = [min, max]
+// 품목: 0=포토카드(0.5kg)  1=응원봉(1.5kg)  2=의류(3.0kg)
+// 지역: 0=미국(LA)  1=독일(FRA)  2=일본(TYO)
+// 규칙: 무거울수록 비쌈 / 독일 > 미국 > 일본
+const SHIP_RANGES = [
+  [[13000,22000],[17000,28000],[10000,18000]], // 포토카드
+  [[22000,40000],[30000,52000],[17000,30000]], // 응원봉
+  [[38000,65000],[50000,90000],[28000,52000]], // 의류
+];
+
+function fillRandom() {
+  // ── Pass/Fail (전부 Pass로 세팅) ──
+  PF_ITEMS.forEach(item => {
+    COMPANIES.forEach(c => { state.pf[`${item.id}_${c}`] = 'O'; });
+  });
+
+  // ── 배송 요율 ──
+  COMPANIES.forEach(c => {
+    SHIP_ITEMS.forEach((_, i) => {
+      [0,1,2].forEach(r => {
+        const [lo, hi] = SHIP_RANGES[i][r];
+        // 업체별 소폭 편차 ±5% (경쟁사 간 차이 반영)
+        const jitter = 0.95 + Math.random() * 0.10;
+        state.ship[`ship_${i}_${c}_${r}`] = String(Math.round(rnd(lo, hi) * jitter / 100) * 100);
+      });
+    });
+  });
+
+  // ── 수수료율: 300 ~ 1,000 원 ──
+  COMPANIES.forEach(c => {
+    state.score[`comm_${c}`] = String(rnd(300, 1000));
+  });
+
+  // ── 월 물량: 3,000 ~ 10,000 건 ──
+  COMPANIES.forEach(c => {
+    state.score[`vol_${c}`] = String(rnd(3000, 10000));
+  });
+
+  // ── CS 인력: 1 ~ 5 명 ──
+  COMPANIES.forEach(c => {
+    state.score[`cs_${c}`] = String(rnd(1, 5));
+  });
+
+  // ── 시스템 등급 ──
+  COMPANIES.forEach(c => {
+    state.score[`sys_${c}`] = pick(['S','A','B']);
+  });
+
+  // ── KPI (전체 월) ──
+  COMPANIES.forEach(c => {
+    MONTHS.forEach((_, mi) => {
+      state.kpi[`kpi_cs_${c}_${mi}`]     = String(rnd(85, 100, 1));
+      state.kpi[`kpi_spd_${c}_${mi}`]    = String(rnd(10, 50, 1) / 10);   // 1.0~5.0일
+      state.kpi[`kpi_cancel_${c}_${mi}`] = String(rnd(3, 55, 1) / 10);    // 0.3~5.5%
+      state.kpi[`kpi_pay_${c}_${mi}`]    = pick(['100','5','0']);
+      state.kpi[`kpi_cmp_${c}_${mi}`]    = String(rnd(0, 4));
+    });
+  });
+
+  // ── DOM 재렌더 ──
+  renderPF();
+  renderShipping();
+  calcShipping();
+  renderScoring();
+  refreshScoring();
+  updateSummary();
+  if (document.getElementById('tab-kpi').classList.contains('active')) renderKPI();
+
+  showToast('🎲 랜덤 테스트값 입력 완료!');
 }
 
 // ═══════════════════════════════════════
