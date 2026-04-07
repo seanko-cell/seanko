@@ -362,10 +362,25 @@ select.score-input { cursor: pointer; }
   <button class="tab-btn" onclick="switchTab('kpi')">② KPI 모니터링 (온보딩 후)</button>
 </div>
 
+<!-- Google Sheets 연동 설정 바 -->
+<div id="gs-bar" style="background:white;border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;box-shadow:var(--shadow)">
+  <span style="font-size:12px;font-weight:700;color:var(--navy);white-space:nowrap">🔗 Google Sheets</span>
+  <input id="gs-url" type="text" placeholder="Apps Script 배포 URL 붙여넣기 (설정 방법은 하단 안내 참고)"
+    style="flex:1;min-width:260px;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;background:var(--input)"
+    oninput="saveGsUrl(this.value)">
+  <button class="btn" style="background:#0F9D58;color:white;font-size:12px" onclick="testConnection()">연결 테스트</button>
+  <span id="gs-status" style="font-size:12px;color:var(--muted)">─</span>
+</div>
+
 <div class="action-bar">
-  <button class="btn btn-primary" onclick="window.print()">🖨 인쇄 / PDF 저장</button>
+  <button class="btn btn-primary" onclick="window.print()">🖨 인쇄 / PDF</button>
+  <button class="btn" style="background:#0F9D58;color:white" onclick="saveToSheets('selection')">📊 선정평가 저장</button>
+  <button class="btn" style="background:#1D6F8C;color:white" onclick="saveToSheets('kpi')">📊 KPI 저장</button>
   <button class="btn btn-outline" onclick="resetAll()">↺ 초기화</button>
 </div>
+
+<!-- Toast 알림 -->
+<div id="toast" style="position:fixed;bottom:24px;right:24px;background:var(--navy);color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;display:none;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2);transition:opacity .3s"></div>
 
 <!-- ════════════════════════════════════════
      TAB 1 — 선정 평가표
@@ -1142,6 +1157,146 @@ function resetAll() {
 }
 
 // ═══════════════════════════════════════
+// GOOGLE SHEETS INTEGRATION
+// ═══════════════════════════════════════
+function getGsUrl() {
+  return localStorage.getItem('gs_url') || '';
+}
+function saveGsUrl(url) {
+  localStorage.setItem('gs_url', url.trim());
+}
+
+function showToast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.background = type === 'error' ? '#B91C1C' : type === 'warn' ? '#92400E' : '#15803D';
+  el.style.display = 'block';
+  el.style.opacity = '1';
+  setTimeout(() => {
+    el.style.opacity = '0';
+    setTimeout(() => el.style.display = 'none', 300);
+  }, 3500);
+}
+
+function setStatus(msg, color = 'var(--muted)') {
+  const el = document.getElementById('gs-status');
+  el.textContent = msg;
+  el.style.color = color;
+}
+
+async function testConnection() {
+  const url = getGsUrl();
+  if (!url) { showToast('Apps Script URL을 먼저 입력해 주세요.', 'warn'); return; }
+  setStatus('연결 중…', '#854D0E');
+  try {
+    const r = await fetch(url);
+    const j = await r.json();
+    if (j.status === 'ok') {
+      setStatus('✅ 연결됨', '#15803D');
+      showToast('Google Sheets 연결 성공!');
+    } else {
+      setStatus('❌ 응답 오류', '#B91C1C');
+      showToast('응답 오류: ' + JSON.stringify(j), 'error');
+    }
+  } catch (e) {
+    setStatus('❌ 연결 실패', '#B91C1C');
+    showToast('연결 실패: ' + e.message, 'error');
+  }
+}
+
+async function saveToSheets(type) {
+  const url = getGsUrl();
+  if (!url) { showToast('Apps Script URL을 먼저 입력해 주세요.', 'warn'); return; }
+
+  const evaluator = document.getElementById('meta-eval')?.value || '';
+  const version   = document.getElementById('meta-ver')?.value  || '';
+
+  let payload;
+
+  if (type === 'selection') {
+    payload = {
+      type: 'selection',
+      evaluator, version,
+      companies: COMPANIES.map(comp => ({
+        name: comp,
+        pf: {
+          pf1: state.pf[`pf1_${comp}`] || 'O',
+          pf2: state.pf[`pf2_${comp}`] || 'O',
+          pf3: state.pf[`pf3_${comp}`] || 'O',
+          pf4: state.pf[`pf4_${comp}`] || 'O',
+          pf5: state.pf[`pf5_${comp}`] || 'O',
+        },
+        ship: SHIP_ITEMS.map((_, i) =>
+          [0,1,2].map(r => parseFloat(state.ship[`ship_${i}_${comp}_${r}`]) || 0)
+        ),
+        basketTotal: getBasket(comp),
+        shipScore:   state[`_ship_score_${comp}`] ?? '',
+        commInput:   state.score[`comm_${comp}`] || '',
+        commScore:   calcItemScore(SCORING_ITEMS[0], state.score[`comm_${comp}`] || ''),
+        volInput:    state.score[`vol_${comp}`]  || '',
+        volScore:    calcItemScore(SCORING_ITEMS[1], state.score[`vol_${comp}`]  || ''),
+        csInput:     state.score[`cs_${comp}`]   || '',
+        csScore:     calcItemScore(SCORING_ITEMS[2], state.score[`cs_${comp}`]   || ''),
+        sysInput:    state.score[`sys_${comp}`]  || '',
+        sysScore:    calcItemScore(SCORING_ITEMS[3], state.score[`sys_${comp}`]  || ''),
+        total:       getTotal(comp),
+        verdict:     getVerdict(getTotal(comp)).text,
+      }))
+    };
+  } else {
+    // KPI: 값이 있는 월만 저장
+    const rows = [];
+    COMPANIES.forEach(comp => {
+      MONTHS.forEach((m, mi) => {
+        const score = calcKPIMonthScore(comp, mi);
+        if (score === null) return;
+        const get = id => state.kpi[`${id}_${comp}_${mi}`] || '';
+        rows.push({
+          company:     comp,
+          month:       m,
+          csRate:      get('kpi_cs'),
+          csScore:     calcKPIItemScore(KPI_ITEMS[0], get('kpi_cs')),
+          spdDays:     get('kpi_spd'),
+          spdScore:    calcKPIItemScore(KPI_ITEMS[1], get('kpi_spd')),
+          cancelRate:  get('kpi_cancel'),
+          cancelScore: calcKPIItemScore(KPI_ITEMS[2], get('kpi_cancel')),
+          payStatus:   get('kpi_pay'),
+          payScore:    calcKPIItemScore(KPI_ITEMS[3], get('kpi_pay')),
+          complaints:  get('kpi_cmp'),
+          total:       score,
+        });
+      });
+    });
+    if (!rows.length) { showToast('저장할 KPI 데이터가 없습니다.', 'warn'); return; }
+    payload = { type: 'kpi', evaluator, rows };
+  }
+
+  showToast('저장 중…', 'warn');
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' }, // Apps Script CORS 우회
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json();
+    if (j.success) {
+      showToast(`✅ Google Sheets에 ${type === 'selection' ? '선정평가' : 'KPI'} 저장 완료!`);
+    } else {
+      showToast('저장 오류: ' + j.error, 'error');
+    }
+  } catch (e) {
+    showToast('저장 실패: ' + e.message, 'error');
+  }
+}
+
+function calcKPIItemScore(item, val) {
+  if (!val && val !== '0') return null;
+  const num = parseFloat(val);
+  if (isNaN(num)) return null;
+  return item.calc(num);
+}
+
+// ═══════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════
 function init() {
@@ -1149,6 +1304,11 @@ function init() {
   const today = new Date().toISOString().split('T')[0];
   const dateEl = document.getElementById('meta-date');
   if (dateEl && !dateEl.value) dateEl.value = today;
+
+  // Restore saved GS URL
+  const saved = getGsUrl();
+  const urlEl = document.getElementById('gs-url');
+  if (urlEl && saved) { urlEl.value = saved; setStatus('URL 저장됨', '#15803D'); }
 
   renderPF();
   renderShipping();
